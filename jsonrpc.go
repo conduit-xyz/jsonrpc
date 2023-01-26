@@ -10,6 +10,9 @@ import (
 	"net/http"
 	"reflect"
 	"strconv"
+
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -135,22 +138,25 @@ type RPCClient interface {
 // Params() is a helper function that uses the same parameter syntax as Call().
 //
 // e.g. to manually create an RPCRequest object:
-// request := &RPCRequest{
-//   Method: "myMethod",
-//   Params: Params("Alex", 35, true),
-// }
+//
+//	request := &RPCRequest{
+//	  Method: "myMethod",
+//	  Params: Params("Alex", 35, true),
+//	}
 //
 // If you know what you are doing you can omit the Params() call to avoid some reflection but potentially create incorrect rpc requests:
-//request := &RPCRequest{
-//   Method: "myMethod",
-//   Params: 2, <-- invalid since a single primitive value must be wrapped in an array --> no magic without Params()
-// }
+//
+//	request := &RPCRequest{
+//	  Method: "myMethod",
+//	  Params: 2, <-- invalid since a single primitive value must be wrapped in an array --> no magic without Params()
+//	}
 //
 // correct:
-// request := &RPCRequest{
-//   Method: "myMethod",
-//   Params: []int{2}, <-- invalid since a single primitive value must be wrapped in an array
-// }
+//
+//	request := &RPCRequest{
+//	  Method: "myMethod",
+//	  Params: []int{2}, <-- invalid since a single primitive value must be wrapped in an array
+//	}
 type RPCRequest struct {
 	Method  string      `json:"method"`
 	Params  interface{} `json:"params,omitempty"`
@@ -396,10 +402,19 @@ func (client *rpcClient) CallBatchRaw(ctx context.Context, requests RPCRequests)
 }
 
 func (client *rpcClient) newRequest(ctx context.Context, req interface{}) (*http.Request, error) {
-
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, err
+	var err error
+	var body []byte
+	switch reqTyped := req.(type) {
+	case proto.Message:
+		body, err = protojson.Marshal(reqTyped)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		body, err = json.Marshal(req)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	request, err := http.NewRequestWithContext(ctx, "POST", client.endpoint, bytes.NewReader(body))
@@ -542,25 +557,28 @@ func (client *rpcClient) doBatchCall(ctx context.Context, rpcRequest []*RPCReque
 // But you should consider to always use NewRequest() instead.
 //
 // e.g. to manually create an RPCRequest object:
-// request := &RPCRequest{
-//   Method: "myMethod",
-//   Params: Params("Alex", 35, true),
-// }
+//
+//	request := &RPCRequest{
+//	  Method: "myMethod",
+//	  Params: Params("Alex", 35, true),
+//	}
 //
 // same with new request:
 // request := NewRequest("myMethod", "Alex", 35, true)
 //
 // If you know what you are doing you can omit the Params() call but potentially create incorrect rpc requests:
-// request := &RPCRequest{
-//   Method: "myMethod",
-//   Params: 2, <-- invalid since a single primitive value must be wrapped in an array --> no magic without Params()
-// }
+//
+//	request := &RPCRequest{
+//	  Method: "myMethod",
+//	  Params: 2, <-- invalid since a single primitive value must be wrapped in an array --> no magic without Params()
+//	}
 //
 // correct:
-// request := &RPCRequest{
-//   Method: "myMethod",
-//   Params: []int{2}, <-- valid since a single primitive value must be wrapped in an array
-// }
+//
+//	request := &RPCRequest{
+//	  Method: "myMethod",
+//	  Params: []int{2}, <-- valid since a single primitive value must be wrapped in an array
+//	}
 func Params(params ...interface{}) interface{} {
 	var finalParams interface{}
 
